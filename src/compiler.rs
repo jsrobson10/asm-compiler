@@ -20,18 +20,12 @@ impl Compiler {
 	}
 
 	pub fn add(&mut self, itype: InstType, mtype: MathType, data: &[u8]) {
-		let expected = instruction::get_arg_count(itype);
+		let expected = instruction::get_arg_count(itype) as usize;
 		if expected != data.len() {
 			panic!("Bad instruction argument count. Expected {}, got {}.", expected, data.len());
 		}
 		self.data.push(((itype as u8) << 4) | (mtype as u8));
 		self.data.extend_from_slice(data);
-	}
-
-	pub fn new_label(&mut self, name: &[u8]) -> u8 {
-		let v = self.data.len() as u8;
-		self.symbols.insert(name.to_vec(), v);
-		return v;
 	}
 
 	pub fn new_symbol(&mut self, name: &[u8], index: u8) {

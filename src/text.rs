@@ -18,21 +18,11 @@ pub fn to_string(bytes: &[u8]) -> String {
 const HEX: &[u8] = b"0123456789abcdef";
 
 pub fn to_hex(bytes: &[u8]) -> String {
-	let mut out = String::from("[");
-	let mut first = true;
-
+	let mut out = String::new();
 	for c in bytes.iter().copied() {
-		if !first {
-			out.push_str(", ");
-		}
-		out.push_str("0x");
 		out.push(HEX[(c >> 4) as usize] as char);
 		out.push(HEX[(c & 15) as usize] as char);
-		first = false;
 	}
-
-	out.push_str("]");
-
 	return out;
 }
 

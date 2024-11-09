@@ -1,6 +1,6 @@
 use std::fs;
 
-use crate::{compiler::Compiler, instruction::{get_named_inst_type, get_named_math_type, MathType}, text};
+use crate::{compiler::Compiler, instruction::{get_named_inst_type, get_named_math_type, MathType}, text, token::Token};
 
 struct State {
 	at: usize,
@@ -92,13 +92,13 @@ impl Parser {
 		return &self.src[start..state.at];
 	}
 
-	fn parse_instruction(&self, state: &mut State, compiler: &mut Compiler, iname: &[u8], mname: Option<&[u8]>) {
-		let mut args: Vec<u8> = Vec::new();
-		let itype = get_named_inst_type(&iname).unwrap();
-		let mtype = match mname {
-			Some(v) => get_named_math_type(&v).unwrap(),
-			None => MathType::Zero,
-		};
+	fn parse_instruction(&self, state: &mut State, iname: &[u8], mname: Option<&[u8]>) -> Token {
+		let mut token = Token::new(
+			get_named_inst_type(&iname).unwrap(),
+			match mname {
+				Some(v) => get_named_math_type(&v).unwrap(),
+				None => MathType::Zero,
+		});
 
 		while state.at < self.src.len() {
 			self.skip_whitespaces(state);
@@ -108,7 +108,7 @@ impl Parser {
 				break;
 			}
 
-			args.push(compiler.to_byte(word).unwrap());
+			token.args.push(word);
 
 			self.skip_whitespaces(state);
 
@@ -120,7 +120,7 @@ impl Parser {
 			state.at += 1;
 		}
 
-		compiler.add(itype, mtype, &args);
+		return token;
 	}
 
 	fn parse_symbol(&self, state: &mut State, compiler: &mut Compiler, name: &[u8]) -> u8 {
@@ -150,24 +150,21 @@ impl Parser {
 
 	fn parse(&self, compiler: &mut Compiler) {
 		let mut state = State {at: 0};
+		let mut tokens: Vec<Token> = Vec::new();
+		let mut token_at = 0;
+
 		while state.at < self.src.len() {
-
 			self.skip_whitespaces_and_newlines(&mut state);
-			
 			let name = self.get_word(&mut state);
-			
 			self.skip_whitespaces(&mut state);
-
 			let c = self.get_next(&mut state);
-
 			if name.len() == 0 {
 				break;
 			}
-
 			match c {
 				Some(b':') => {
 					state.at += 1;
-					compiler.new_label(&name);
+					compiler.new_symbol(&name, token_at);
 					continue;
 				}
 				Some(b';') => {
@@ -189,13 +186,19 @@ impl Parser {
 							mname = None;
 						}
 					};
-					self.parse_instruction(&mut state, compiler, name, mname);
+					let token = self.parse_instruction(&mut state, name, mname);
+					token_at += token.size();
+					tokens.push(token);
 					continue;
 				}
 				None => {
 					panic!("End of file");
 				}
 			}
+		}
+
+		for token in tokens {
+			token.process(compiler);
 		}
 	}
 }
