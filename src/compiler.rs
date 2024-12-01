@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 
-use crate::{instruction::{self, InstType, MathType}, number, text};
+use crate::{instruction::{InstType, MathType}, number, text};
 
 pub struct Compiler {
 	symbols: HashMap<Vec<u8>, u8>,
@@ -19,13 +19,25 @@ impl Compiler {
 		}
 	}
 
-	pub fn add(&mut self, itype: InstType, mtype: MathType, data: &[u8]) {
-		let expected = instruction::get_arg_count(itype) as usize;
+	pub fn add(&mut self, itype: InstType, mtype: MathType, data: &[u8]) -> Result<(), String> {
+		let expected = itype.arg_count() as usize;
 		if expected != data.len() {
-			panic!("Bad instruction argument count. Expected {}, got {}.", expected, data.len());
+			return Err(format!("Bad instruction argument count. Expected {}, got {}.", expected, data.len()));
 		}
 		self.data.push(((itype as u8) << 4) | (mtype as u8));
-		self.data.extend_from_slice(data);
+
+		if itype.is_math() {
+			if data[0] & 0xf0 != 0xf0 || data[1] & 0xf0 != 0xf0 {
+				return Err(format!("Addresses {:#02x} and {:#02x} must only reference math registers (0xf0 -> 0xff).", data[0], data[1]));
+			}
+			self.data.push(((data[0] & 15) << 4) | (data[1] & 15));
+			self.data.push(data[2]);
+		}
+		else {
+			self.data.extend_from_slice(data);
+		}
+
+		return Ok(());
 	}
 
 	pub fn new_symbol(&mut self, name: &[u8], index: u8) {

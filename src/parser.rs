@@ -10,14 +10,17 @@ struct Parser {
 	src: Vec<u8>,
 }
 
-pub fn from_source(src: Vec<u8>, compiler: &mut Compiler) {
+pub fn from_source(src: Vec<u8>, compiler: &mut Compiler) -> Result<(), String> {
 	let parser = Parser {src};
-	parser.parse(compiler);
+	return parser.parse(compiler);
 }
 
-pub fn from_file(path: &str, compiler: &mut Compiler) {
-	let parser = Parser {src: fs::read(path).unwrap()};
-	parser.parse(compiler);
+pub fn from_file(path: &str, compiler: &mut Compiler) -> Result<(), String> {
+	let parser = Parser {src: match fs::read(path) {
+		Ok(v) => v,
+		Err(e) => return Err(e.to_string()),
+	}};
+	return parser.parse(compiler);
 }
 
 impl Parser {
@@ -92,13 +95,20 @@ impl Parser {
 		return &self.src[start..state.at];
 	}
 
-	fn parse_instruction(&self, state: &mut State, iname: &[u8], mname: Option<&[u8]>) -> Token {
+	fn parse_instruction(&self, state: &mut State, iname: &[u8], mname: Option<&[u8]>) -> Result<Token, String> {
 		let mut token = Token::new(
-			get_named_inst_type(&iname).unwrap(),
+			match get_named_inst_type(&iname) {
+				Some(v) => v,
+				None => return Err(format!("Instruction {} does not exist", text::to_string(iname))),
+			},
 			match mname {
-				Some(v) => get_named_math_type(&v).unwrap(),
+				Some(v) => match get_named_math_type(&v) {
+					Some(v) => v,
+					None => return Err(format!("Math type {} does not exist", text::to_string(v))),
+				},
 				None => MathType::Zero,
-		});
+			}
+		);
 
 		while state.at < self.src.len() {
 			self.skip_whitespaces(state);
@@ -120,35 +130,39 @@ impl Parser {
 			state.at += 1;
 		}
 
-		return token;
+		return Ok(token);
 	}
 
-	fn parse_symbol(&self, state: &mut State, compiler: &mut Compiler, name: &[u8]) -> u8 {
+	fn parse_symbol(&self, state: &mut State, compiler: &mut Compiler, name: &[u8]) -> Result<u8, String> {
 		self.skip_whitespaces(state);
 		let word = self.get_word(state);
 		if word.len() > 0 {
-			let v = compiler.to_byte(word).unwrap();
+			let v = match compiler.to_byte(word) {
+				Some(v) => v,
+				None => return Err(format!("Value or symbol {} is not valid", text::to_string(name))),
+			};
 			compiler.new_symbol(&name, v);
-			return v;
+			return Ok(v);
 		}
 		else {
 			let c = self.get_next(state);
 			match c {
 				Some(b'.') => {
 					state.at += 1;
-					return compiler.new_variable(&name);
+					return Ok(compiler.new_variable(&name));
 				}
-				Some(v) => {
-					panic!("Expected '.', Received '{}'", v as char);
-				}
-				None => {
-					panic!("Expected '.', Received none");
-				}
+				Some(v) => return Err(format!("Expected '.', Received '{}'", v as char)),
+				None => return Err(format!("Expected '.', Received none")),
 			};
 		}
 	}
 
-	fn parse(&self, compiler: &mut Compiler) {
+	fn format_error(&self, state: &State, err: String) -> String {
+		let (x, y) = text::get_text_pos(&self.src, state.at);
+		return format!("Compilation error at {}:{}. {}", x, y, err);
+	}
+
+	fn parse(&self, compiler: &mut Compiler) -> Result<(), String> {
 		let mut state = State {at: 0};
 		let mut tokens: Vec<Token> = Vec::new();
 		let mut token_at = 0;
@@ -168,11 +182,14 @@ impl Parser {
 					continue;
 				}
 				Some(b';') => {
-					panic!("Unexpected token ';'");
+					return Err(self.format_error(&state, "Unexpected token ';'".to_string()));
 				}
 				Some(b'=') => {
 					state.at += 1;
-					self.parse_symbol(&mut state, compiler, name);
+					match self.parse_symbol(&mut state, compiler, name) {
+						Ok(_) => (),
+						Err(v) => return Err(self.format_error(&state, v)),
+					}
 					continue;
 				}
 				Some(c) => {
@@ -186,20 +203,25 @@ impl Parser {
 							mname = None;
 						}
 					};
-					let token = self.parse_instruction(&mut state, name, mname);
+					let token = match self.parse_instruction(&mut state, name, mname) {
+						Ok(v) => v,
+						Err(v) => return Err(self.format_error(&state, v)),
+					};
 					token_at += token.size();
 					tokens.push(token);
 					continue;
 				}
-				None => {
-					panic!("End of file");
-				}
+				None => return Err(self.format_error(&state, "End of file".to_string())),
 			}
 		}
 
 		for token in tokens {
-			token.process(compiler);
+			if let Err(err) = token.process(compiler) {
+				return Err(self.format_error(&state, err));
+			}
 		}
+
+		return Ok(());
 	}
 }
 

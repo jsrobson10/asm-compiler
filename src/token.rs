@@ -1,4 +1,4 @@
-use crate::{compiler::Compiler, instruction::{self, InstType, MathType}};
+use crate::{compiler::Compiler, instruction::{InstType, MathType}, text};
 
 
 pub struct Token<'a> {
@@ -12,18 +12,21 @@ impl Token<'_> {
 		Token {itype, mtype, args: Vec::new()}
 	}
 
-	pub fn process(&self, compiler: &mut Compiler) {
+	pub fn process(&self, compiler: &mut Compiler) -> Result<(), String> {
 		let mut data: Vec<u8> = Vec::new();
 
 		for arg in self.args.iter().copied() {
-			data.push(compiler.to_byte(arg).unwrap());
+			data.push(match compiler.to_byte(arg) {
+				Some(v) => v,
+				None => return Err(format!("Could not process argument {}", text::to_string(arg))),
+			});
 		}
 
-		compiler.add(self.itype, self.mtype, &data);
+		return compiler.add(self.itype, self.mtype, &data);
 	}
 
 	pub fn size(&self) -> u8 {
-		return instruction::get_arg_count(self.itype) + 1;
+		return self.itype.arg_count() + 1;
 	}
 }
 
